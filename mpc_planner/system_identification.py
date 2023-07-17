@@ -2,7 +2,7 @@ import numpy as np
 import math
 import sys
 import os
-import MHE_MPC.config as config
+import mpc_planner.config as config
 rel_do_mpc_path = os.path.join('..','..')
 sys.path.append(rel_do_mpc_path)
 

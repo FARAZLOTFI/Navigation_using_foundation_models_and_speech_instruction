@@ -3,9 +3,8 @@ from evotorch import Problem
 from evotorch.algorithms import SNES, CEM, CMAES
 from evotorch.logging import StdOutLogger, PandasLogger
 import torch
-from models.nn_model import predictive_model_badgr
 import numpy as np
-from MHE_MPC.system_identification import MHE_MPC
+from mpc_planner.system_identification import MHE_MPC
 
 class rc_car_model:
     def __init__(self):
