@@ -20,8 +20,8 @@ class lseg_based_nav:
         self.planner = mpc_planner(planning_horizon, num_of_actions)
         # 5.8262448167737955e+02
         self.cam_parameters = {
-            'FX_DEPTH' : 120,
-            'FY_DEPTH' : 140,
+            'FX_DEPTH' : 500,
+            'FY_DEPTH' : 80,
             'CX_DEPTH' : 3.1304475870804731e+02,
             'CY_DEPTH' : 2.3844389626620386e+02}
 
@@ -129,5 +129,5 @@ if __name__ == '__main__':
     depth_image = np.load(depth_path,allow_pickle=True)
 
     lseg_planner = lseg_based_nav()
-    lseg_planner.planning(img, depth_image, 'other')
+    lseg_planner.planning(img, depth_image, 'grass')
 
