@@ -52,7 +52,7 @@ class mpc_planner:
         self.CEM_initialization()
 
         self.desired_pose = torch.zeros(2) # X , Y
-
+        self.desired_heading = torch.zeros(0)
     def CEM_initialization(self):
         bounds = (-1,1)
         higher_bounds = bounds[1]*torch.ones(self.num_of_actions)
@@ -69,7 +69,7 @@ class mpc_planner:
         )
 
         # Create a SearchAlgorithm instance to optimise the Problem instance
-        self.searcher = CMAES(problem, popsize=10, stdev_init=1)
+        self.searcher = CMAES(problem, popsize=50, stdev_init=1)
 
     def MPC_cost(self, set_of_actions):
         set_of_steering_angles = set_of_actions[:self.receding_horizon]
@@ -81,21 +81,32 @@ class mpc_planner:
         for i in range(self.receding_horizon):
             states = self.system_model.step(*states, set_of_steering_angles[i], set_of_throttles)
             #coef_vel = torch.tensor([1],dtype=torch.float32).cuda()
-            loss[i] = (states[0] - self.desired_pose[0])**2 + 2*(states[1] - self.desired_pose[1])**2
+            loss[i] = (self.desired_heading - states[2])**2#(states[0] - self.desired_pose[0])**2 + 2*(states[1] - self.desired_pose[1])**2
         return loss.sum()
-    def plan(self, desired_pose):
-        observations = self.estimation_algorithm.measurement_update()
+    def plan(self, desired_pose, unreal_mode=False, given_observations=None):
+        if unreal_mode:
+            observations = np.array(given_observations)
+        else:
+            observations = self.estimation_algorithm.measurement_update()
         # update the states
+        print('obs: ',observations)
         self.system_model.states = torch.tensor(self.estimation_algorithm.mhe.make_step(observations),dtype=torch.float32).cuda()
         # update the parameters
-        self.system_model.parameters_update(self.estimation_algorithm.mhe.data._p[-1])
+        # Note that we need to set local targets, while the states of the vehicle are more like global
+        if desired_pose[0]==-100 and desired_pose[1] == -100:
+            return [torch.tensor(0.0).cuda(),0.0]
+        else:
+            self.desired_pose[0] = self.system_model.states[0] + desired_pose[0]
+            self.desired_pose[1] = self.system_model.states[1] + desired_pose[1]
+            self.desired_heading = self.system_model.states[2] + \
+                                   (torch.atan2(torch.tensor(desired_pose[0]),-torch.tensor(desired_pose[1])) - 0.5*torch.tensor(np.math.pi))
+            self.searcher.run(5)
+            print('states of the vehicle: ',self.system_model.states[2])
+            print('Desired: ', self.desired_heading)
+            print('Target heading: ', torch.atan2(torch.tensor(desired_pose[0]),-torch.tensor(desired_pose[1])))
 
-        self.desired_pose[0] = desired_pose[0]
-        self.desired_pose[1] = desired_pose[1]
-
-        self.searcher.run(10)
-        self.debug_(self.searcher.status['pop_best'].values)
-        return self.searcher.status['pop_best'].values
+            #self.debug_(self.searcher.status['pop_best'].values)
+            return torch.tanh(self.searcher.status['pop_best'].values)*(-0.6) #torch.tanh(sigma)*(-0.6)
 
     def debug_(self, set_of_actions):
         set_of_steering_angles = set_of_actions[:self.receding_horizon]
@@ -104,7 +115,7 @@ class mpc_planner:
         set_of_throttles = torch.tensor(0.2).cuda()  # constant velocity
         for i in range(self.receding_horizon):
             states = self.system_model.step(*states, set_of_steering_angles[i], set_of_throttles)
-            print('Action: ',[set_of_steering_angles[i].detach().cpu(),set_of_throttles.detach().cpu()],' *states: ', states)
+            #print('Action: ',[set_of_steering_angles[i].detach().cpu(),set_of_throttles.detach().cpu()],' *states: ', states)
 
 if __name__ == '__main__':
     import time

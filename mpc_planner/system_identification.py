@@ -137,7 +137,7 @@ class MHE_MPC():
     def MHE_initialization(self):
         setup_mhe = {
             't_step': 0.2,
-            'n_horizon': 5,
+            'n_horizon': 3,
             'store_full_solution': True,
             'meas_from_data': True
         }
@@ -203,42 +203,47 @@ class MHE_MPC():
     def MHE(self):
         pass
 
-    def measurement_update(self, offline_mode=True):
+    def measurement_update(self, offline_mode=True, unreal_mode=False, observations=None):
 
-        if offline_mode:
-            file_path = self.topic_data_folder_path + self.topic_data_list[self.data_counter]
-            file_number = int(float(file_path[-8:-4]))
-            if self.previous_file_number is not None:
-                if file_number - self.previous_file_number == 1:  # TODO this should be used
-                    flag_new_rosbag = False
-                else:
-                    flag_new_rosbag = True
+        if unreal_mode:
+            dx, dy, dbearing, vel, pitch, steering_angle, throttle = observations
+            return np.array([dx, dy, dbearing, vel, pitch, steering_angle * (-0.6), throttle])
 
-            self.previous_file_number = file_number
-            # the order of the data is: steering angle, throttle, w, x, y, z, Lon, lat,
-            # then, timestamps for the image, depth, teensy, imu, and gps topics
-            loaded_data = np.load(file_path)
-            steering_angle, throttle, w, x, y, z, lon_GPS, lat_GPS = loaded_data[:8]
-            self.data_counter += 1
         else:
-            pass
+            if offline_mode:
+                file_path = self.topic_data_folder_path + self.topic_data_list[self.data_counter]
+                file_number = int(float(file_path[-8:-4]))
+                if self.previous_file_number is not None:
+                    if file_number - self.previous_file_number == 1:  # TODO this should be used
+                        flag_new_rosbag = False
+                    else:
+                        flag_new_rosbag = True
 
-        roll, pitch, yaw = euler_from_quaternion(x, y, z, w)
-        pitch = -pitch
-        if self.initial_GPS_lon is None:
-            # note, the following is provided in degree! also we don't have vel as
-            # at this point there is only one GPS point available
-            return np.array([lon_GPS, lat_GPS, yaw, pitch, steering_angle*(-0.6), throttle])
-        else: # we have to convert the degree to distance; the following gives us the distance in km
-            dx, dy = GPS_deg2distance_XY(self.initial_GPS_lon, lon_GPS, self.initial_GPS_lat, lat_GPS)
-            # dx and dy here are calculated nesbat be sharayet avalie na lahze ghabl k darvaghe ma lahze ghabl vasamoon moheme
-            vel, dbearing = GPS_deg2vel(self.previous_GPS_lon, lon_GPS, self.previous_GPS_lat, lat_GPS)
-            self.previous_GPS_lat = lat_GPS
-            self.previous_GPS_lon = lon_GPS
-            self.bearing = dbearing
-            error = (yaw + 3.02) - dbearing
+                self.previous_file_number = file_number
+                # the order of the data is: steering angle, throttle, w, x, y, z, Lon, lat,
+                # then, timestamps for the image, depth, teensy, imu, and gps topics
+                loaded_data = np.load(file_path)
+                steering_angle, throttle, w, x, y, z, lon_GPS, lat_GPS = loaded_data[:8]
+                self.data_counter += 1
+            else:
+                pass
 
-            return np.array([dx, dy, dbearing, vel, pitch, steering_angle * (-0.6), throttle])#, yaw
+            roll, pitch, yaw = euler_from_quaternion(x, y, z, w)
+            pitch = -pitch
+            if self.initial_GPS_lon is None:
+                # note, the following is provided in degree! also we don't have vel as
+                # at this point there is only one GPS point available
+                return np.array([lon_GPS, lat_GPS, yaw, pitch, steering_angle*(-0.6), throttle])
+            else: # we have to convert the degree to distance; the following gives us the distance in km
+                dx, dy = GPS_deg2distance_XY(self.initial_GPS_lon, lon_GPS, self.initial_GPS_lat, lat_GPS)
+                # dx and dy here are calculated nesbat be sharayet avalie na lahze ghabl k darvaghe ma lahze ghabl vasamoon moheme
+                vel, dbearing = GPS_deg2vel(self.previous_GPS_lon, lon_GPS, self.previous_GPS_lat, lat_GPS)
+                self.previous_GPS_lat = lat_GPS
+                self.previous_GPS_lon = lon_GPS
+                self.bearing = dbearing
+                error = (yaw + 3.02) - dbearing
+
+                return np.array([dx, dy, dbearing, vel, pitch, steering_angle * (-0.6), throttle])#, yaw
 
 
 if __name__ == '__main__':

@@ -5,8 +5,8 @@ import cv2
 import matplotlib.pyplot as plt
 plt.ion()
 
-gt_path = '/home/barbados/lseg-minimal/examples/results/'
-lseg_output_path = '/home/barbados/offroad_terrain_dataset_kaggle/archive/TrainingImages/TrainingImages/EnumMasks/png_0_255/'
+gt_path = '/home/barbados/offroad_terrain_dataset_large/annotated_dataset_faraz/roads.v1i.coco-segmentation/masks/'
+lseg_output_path = '/home/barbados/lseg-minimal/examples/results_1000_mine/'
 
 gt_files = os.listdir(gt_path)
 lseg_files = os.listdir(lseg_output_path)
@@ -17,10 +17,10 @@ dice_list = []
 for item1,item2 in zip(gt_files,lseg_files):
     gt_file = cv2.imread(gt_path + item1)[:,:,0]
     gt = np.zeros(shape=(gt_file.shape[0], gt_file.shape[1]))
-    gt[gt_file==0]=1
+    gt[gt_file<254]=1
     seg_file = cv2.imread(lseg_output_path + item2)[:,:,0]
     seg = np.zeros(shape=(seg_file.shape[0], seg_file.shape[1]))
-    seg[seg_file == 0] = 1
+    seg[seg_file<254] = 1
 
     k = 1 # black
     dice = np.sum(seg[gt == k]) * 2.0 / (np.sum(seg) + np.sum(gt))
