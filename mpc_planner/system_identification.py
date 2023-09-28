@@ -137,7 +137,7 @@ class MHE_MPC():
     def MHE_initialization(self):
         setup_mhe = {
             't_step': 0.2,
-            'n_horizon': 3,
+            'n_horizon': 1,
             'store_full_solution': True,
             'meas_from_data': True
         }

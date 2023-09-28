@@ -7,7 +7,7 @@ import numpy as np
 from mpc_planner.system_identification import MHE_MPC
 
 class rc_car_model:
-    def __init__(self):
+    def __init__(self, max_steering=-0.6):
         # initial values of the parameters
         self.C1= torch.tensor(0.5)
         self.C2 = torch.tensor(10/6)
@@ -17,15 +17,15 @@ class rc_car_model:
         self.Cr0 = torch.tensor(0.7)
         self.mu_m = torch.tensor(4.0)
         self.g_ = torch.tensor(9.81)
-        self.dt = torch.tensor(0.2)
-
+        self.dt = torch.tensor(0.4)
+        self.max_steering = max_steering
         self.states = torch.tensor(np.array([0, 0, 0, 0, 0]),dtype=torch.float32)
     # where we use MHE to update the parameters each time we get a new measurements
     def parameters_update(self, updated_parameters):
         self.C1,self.Cm1, self.Cm2, self.Cr2, self.Cr0, self.mu_m = torch.tensor(updated_parameters, dtype=torch.float32).cuda()
 
     def step(self, X, Y, Sai, V, Pitch, sigma, forward_throttle):
-        sigma = torch.tanh(sigma)*(-0.6)
+        sigma = torch.tanh(sigma)*(self.max_steering)
         #forward_throttle = torch.tanh(forward_throttle)
         X = (V * torch.cos(Sai + self.C1 * sigma))*self.dt + X
         Y = (V * torch.sin(Sai + self.C1 * sigma))*self.dt + Y
@@ -36,8 +36,9 @@ class rc_car_model:
         return X, Y, Sai, V, Pitch
 
 class mpc_planner:
-    def __init__(self, receding_horizon, num_of_actions):
-        self.system_model = rc_car_model()
+    def __init__(self, receding_horizon, num_of_actions, max_steering=-0.6):
+        self.system_model = rc_car_model(max_steering=max_steering)
+        self.max_steering = max_steering
         self.receding_horizon = receding_horizon
         self.num_of_actions = num_of_actions
         self.num_of_states = 5
@@ -50,9 +51,10 @@ class mpc_planner:
         self.estimation_algorithm = MHE_MPC()
         # the optimization solver
         self.CEM_initialization()
-
+        self.initial_heading = None
         self.desired_pose = torch.zeros(2) # X , Y
         self.desired_heading = torch.zeros(0)
+        self.throttle = torch.tensor(0.0).cuda()
     def CEM_initialization(self):
         bounds = (-1,1)
         higher_bounds = bounds[1]*torch.ones(self.num_of_actions)
@@ -69,44 +71,67 @@ class mpc_planner:
         )
 
         # Create a SearchAlgorithm instance to optimise the Problem instance
-        self.searcher = CMAES(problem, popsize=50, stdev_init=1)
+        self.searcher = CMAES(problem, popsize=10, stdev_init=1)
 
     def MPC_cost(self, set_of_actions):
+        difference_ = 0
         set_of_steering_angles = set_of_actions[:self.receding_horizon]
         ##set_of_throttles = set_of_actions[self.receding_horizon:]
         # initialization of the mpc algorithm with the current states of the model
         states = self.system_model.states
         loss = torch.zeros(self.receding_horizon).cuda()#torch.tensor([0],dtype=torch.float32).cuda()
-        set_of_throttles = torch.tensor(0.2).cuda() # constant velocity
+        set_of_throttles = self.throttle  # constant velocity
         for i in range(self.receding_horizon):
             states = self.system_model.step(*states, set_of_steering_angles[i], set_of_throttles)
             #coef_vel = torch.tensor([1],dtype=torch.float32).cuda()
-            loss[i] = (self.desired_heading - states[2])**2#(states[0] - self.desired_pose[0])**2 + 2*(states[1] - self.desired_pose[1])**2
+            # if self.desired_heading<0:
+            #     self.desired_heading += self.desired_heading + torch.tensor(np.math.pi)
+            if i > 0:
+                difference_ = set_of_steering_angles[i] - set_of_steering_angles[i-1]
+            # if states[2]*self.desired_heading < 0:
+            #     loss[i] = (self.desired_heading - (states[2] + 0.5*torch.tensor(np.math.pi)))**2
+            # else:
+            loss[i] = difference_**2 + (self.desired_heading - states[2])**2#(states[0] - self.desired_pose[0])**2 + 2*(states[1] - self.desired_pose[1])**2
         return loss.sum()
-    def plan(self, desired_pose, unreal_mode=False, given_observations=None):
+    def plan(self, desired_pose, unreal_mode=False, given_observations=None, throttle_command = 0.0):
         if unreal_mode:
             observations = np.array(given_observations)
         else:
             observations = self.estimation_algorithm.measurement_update()
         # update the states
         print('obs: ',observations)
+        if self.initial_heading is None:
+            self.initial_heading = observations[2]
+
+        observations[2] = observations[2] + np.math.pi/2
         self.system_model.states = torch.tensor(self.estimation_algorithm.mhe.make_step(observations),dtype=torch.float32).cuda()
         # update the parameters
         # Note that we need to set local targets, while the states of the vehicle are more like global
         if desired_pose[0]==-100 and desired_pose[1] == -100:
-            return [torch.tensor(0.0).cuda(),0.0]
+            return [torch.tensor(0.3*(np.random.rand()-0.5)).cuda(),0.0]
         else:
             self.desired_pose[0] = self.system_model.states[0] + desired_pose[0]
             self.desired_pose[1] = self.system_model.states[1] + desired_pose[1]
+            # self.desired_heading = self.system_model.states[2] + \
+            #                        (torch.atan2(torch.tensor(desired_pose[0]),-torch.tensor(desired_pose[1])) - 0.5*torch.tensor(np.math.pi))
             self.desired_heading = self.system_model.states[2] + \
-                                   (torch.atan2(torch.tensor(desired_pose[0]),-torch.tensor(desired_pose[1])) - 0.5*torch.tensor(np.math.pi))
-            self.searcher.run(5)
+                                   (torch.atan2(torch.tensor(desired_pose[1]),
+                                                torch.tensor(desired_pose[0])) )
+
             print('states of the vehicle: ',self.system_model.states[2])
             print('Desired: ', self.desired_heading)
-            print('Target heading: ', torch.atan2(torch.tensor(desired_pose[0]),-torch.tensor(desired_pose[1])))
+            print('Target heading: ', (torch.atan2(torch.tensor(desired_pose[1]),
+                                                torch.tensor(desired_pose[0])) ))
+            print('initial heading: ',self.initial_heading)
 
+            self.throttle = torch.tensor(throttle_command).cuda()
+            try:
+                self.searcher.run(1)
+            except:
+                self.CEM_initialization()
+                return torch.tensor(np.array([0,0]))
             #self.debug_(self.searcher.status['pop_best'].values)
-            return torch.tanh(self.searcher.status['pop_best'].values)*(-0.6) #torch.tanh(sigma)*(-0.6)
+            return torch.tanh(self.searcher.status['pop_best'].values)*(self.max_steering) #torch.tanh(sigma)*(-0.6)
 
     def debug_(self, set_of_actions):
         set_of_steering_angles = set_of_actions[:self.receding_horizon]

@@ -14,9 +14,9 @@ import clip
 import cv2
 import time
 class lseg_based_nav:
-    def __init__(self,planning_horizon, unreal_mode=False):
+    def __init__(self,planning_horizon, max_action=-0.6, unreal_mode=False):
         num_of_actions = planning_horizon  # one for the velocity
-        self.planner = mpc_planner(planning_horizon, num_of_actions)
+        self.planner = mpc_planner(planning_horizon, num_of_actions, max_action)
         # 5.8262448167737955e+02
         if unreal_mode:
             self.cam_parameters = {
@@ -41,13 +41,13 @@ class lseg_based_nav:
         )
 
         self.lseg_initialization()
-    def planning(self, current_image, current_depth_map, preferred_terrain,measurements=None, unreal_mode=False ,threshold=0.8):
+    def planning(self, current_image, current_depth_map, preferred_terrain,measurements=None, unreal_mode=False ,threshold=0.8, throttle_command =0.0):
         imagePlane_point = self.image_processing(current_image, preferred_terrain, threshold)
         realWorld_point = self.point_to_3d_world(current_depth_map, imagePlane_point,unreal_mode=unreal_mode)
         if measurements is None:
-            planned_actions = self.planner.plan(realWorld_point)
+            planned_actions = self.planner.plan(realWorld_point, throttle_command=throttle_command)
         else:
-            planned_actions = self.planner.plan(realWorld_point, unreal_mode=True, given_observations=measurements) #TODO check this
+            planned_actions = self.planner.plan(realWorld_point, unreal_mode=True, given_observations=measurements, throttle_command=throttle_command) #TODO check this
 
         return planned_actions
     def point_to_3d_world(self, depth_image, point, unreal_mode=False):
@@ -79,7 +79,7 @@ class lseg_based_nav:
 
         # Preprocess the text prompt
         clip_text_encoder = self.net.clip_pretrained.encode_text
-        self.label_classes = ['other','road']
+        self.label_classes = ['other','rock','plant','mountain','road']
         # Cosine similarity module
         self.cosine_similarity = torch.nn.CosineSimilarity(dim=1)
         with torch.no_grad():
@@ -125,15 +125,17 @@ class lseg_based_nav:
             uncertainties = torch.var(similarities, 1)
             kernels_list = [100,50,20,10,5,2]
 
-            cv2.imshow('seg map',class_scores[0].numpy().reshape([240,320,1])*255)
+            seg_map = class_scores[0].numpy().reshape([240,320])*(1/(len(self.label_classes)-1))
+
+            cv2.imshow('seg map',seg_map)
             cv2.waitKey(1)
 
             for item in kernels_list:
                 # this clustered thing has 1,...,... shape!
                 clustered_data = F.avg_pool2d(class_scores, kernel_size=item)
                 clustered_uncertainties = torch.max_pool2d(uncertainties, kernel_size=item)
-                lower_bound = int(0.6 * clustered_data.shape[1])  # to make sure that it's on the ground not air
-                higher_bound = int(0.95 * clustered_data.shape[1])
+                lower_bound = int(0.5 * clustered_data.shape[1])  # to make sure that it's on the ground not air
+                higher_bound = int(0.9 * clustered_data.shape[1])
                 if torch.sum(clustered_data[0][lower_bound:higher_bound,:] == desired_class)>0:
                     break
             clustered_data = clustered_data[0].detach().cpu()
@@ -150,7 +152,7 @@ class lseg_based_nav:
             selected_point = np.array(selected_point)
             print('selected_point: ',selected_point)
             if len(selected_point)>0:
-                candidate_point = np.argmin(abs(selected_point-selected_point.mean(0)).sum(1)*(np.array(points_uncertainty)))
+                candidate_point = np.argmin(abs(selected_point-selected_point.mean(0)).sum(1))# *(np.array(points_uncertainty))
                 return selected_point[candidate_point]
             else:
                 return np.array([0,0])
