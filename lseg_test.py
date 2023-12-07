@@ -56,7 +56,7 @@ if __name__ == "__main__":
     label_classes = ['road', 'other']
     # Cosine similarity module
     cosine_similarity = torch.nn.CosineSimilarity(dim=1)
-    images_folder = '/home/barbados/offroad_terrain_dataset_kaggle/archive/TrainingImages/TrainingImages/OriginalImages/'
+    images_folder = '/home/barbados/offroad_terrain_dataset_kaggle/archive/AttentionRegion/AttentionRegion/images/'
     images_list = os.listdir(images_folder)
     images_list.sort()
     with torch.no_grad():

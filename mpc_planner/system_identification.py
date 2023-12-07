@@ -2,7 +2,15 @@ import numpy as np
 import math
 import sys
 import os
-import mpc_planner.config as config
+
+Test_environment = 'ROS' # 'Unreal'
+if(Test_environment == 'ROS'):
+    import src.Navigation_using_foundation_models_and_speech_instruction.mpc_planner.config as config
+    print('ROS environment is selected!!!')
+else:
+    import mpc_planner.config as config
+    print('Unreal environment is selected!!!')
+
 rel_do_mpc_path = os.path.join('..','..')
 sys.path.append(rel_do_mpc_path)
 

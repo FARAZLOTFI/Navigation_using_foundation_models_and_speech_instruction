@@ -4,7 +4,14 @@ from evotorch.algorithms import SNES, CEM, CMAES
 from evotorch.logging import StdOutLogger, PandasLogger
 import torch
 import numpy as np
-from mpc_planner.system_identification import MHE_MPC
+
+Test_environment = 'ROS' # 'Unreal'
+if(Test_environment == 'ROS'):
+    from src.Navigation_using_foundation_models_and_speech_instruction.mpc_planner.system_identification import MHE_MPC
+    print('ROS environment is selected!!!')
+else:
+    from mpc_planner.system_identification import MHE_MPC
+    print('Unreal environment is selected!!!')
 
 class rc_car_model:
     def __init__(self, max_steering=-0.6):
